@@ -1,22 +1,14 @@
 #!/usr/bin/env bash
 
-# dependencies check
+# Dependencies check
 command -v perl >/dev/null || { echo -e "\nperl was not found, exiting...\n" >&2; exit 1; }
 command -v unzip >/dev/null || { echo -e "\nunzip was not found, exiting...\n" >&2; exit 1; }
+command -v zip >/dev/null || { echo -e "\nzip was not found, exiting...\n" >&2; exit 1; }
 
 # Inital paths and filenames
-APP_PATH="/Applications/Spotify.app"
-if [[ -d "${HOME}${APP_PATH}" ]]; then
-  INSTALL_PATH="${HOME}${APP_PATH}"
-elif [[ -d "${APP_PATH}" ]]; then
-  INSTALL_PATH="${APP_PATH}"
-else
-  echo -e "\nSpotify not found. Exiting...\n"
-  exit; fi
-
-CACHE_PATH="${HOME}/Library/Caches/com.spotify.client"
-UPDATE_PATH="${HOME}/Library/Application Support/Spotify/PersistentCache/Update"
-XPUI_PATH="${INSTALL_PATH}/Contents/Resources/Apps"
+CACHE_PATH="${HOME}/.cache/spotify/"
+INSTALL_PATH=$(readlink -e `type -p spotify`| rev | cut -d/ -f2- | rev)
+XPUI_PATH="${INSTALL_PATH}/Apps"
 XPUI_DIR="${XPUI_PATH}/xpui"
 XPUI_BAK="${XPUI_PATH}/xpui.bak"
 XPUI_SPA="${XPUI_PATH}/xpui.spa"
@@ -25,16 +17,18 @@ XPUI_CSS="${XPUI_DIR}/xpui.css"
 HOME_V2_JS="${XPUI_DIR}/home-v2.js"
 VENDOR_XPUI_JS="${XPUI_DIR}/vendor~xpui.js"
 
+# Detect client in PATH
+if [[ ! -d "${INSTALL_PATH}" ]]; then
+  echo -e "\nSpotify not found in PATH. Exiting...\n"
+  exit; fi
+
 # Script flags
 CACHE_FLAG='false'
 EXPERIMENTAL_FLAG='false'
 FORCE_FLAG='false'
-HIDE_PODCASTS_FLAG='false'
-OLD_UI_FLAG='false'
 PREMIUM_FLAG='false'
-UPDATE_FLAG='false'
 
-while getopts 'cefhopu' flag; do
+while getopts 'cefp' flag; do
   case "${flag}" in
     c) 
       CACHE_FLAG='true' ;;
@@ -42,14 +36,8 @@ while getopts 'cefhopu' flag; do
       EXPERIMENTAL_FLAG='true' ;;
     f) 
       FORCE_FLAG='true' ;;
-    h)
-      HIDE_PODCASTS_FLAG='true' ;;
-    o)
-      OLD_UI_FLAG='true' ;;
     p)
       PREMIUM_FLAG='true' ;;
-    u)
-      UPDATE_FLAG='true' ;;
     *) 
       echo "Error: Flag not supported."
       exit ;;
@@ -63,8 +51,8 @@ PERL="perl -pi -w -e"
 AD_EMPTY_AD_BLOCK='s|adsEnabled:!0|adsEnabled:!1|'
 AD_PLAYLIST_SPONSORS='s|allSponsorships||'
 AD_UPGRADE_BUTTON='s/(return|.=.=>)"free"===(.+?)(return|.=.=>)"premium"===/$1"premium"===$2$3"free"===/g'
-AD_AUDIO_ADS='s|(case .:)return this.enabled=...+?(;case .:this.subscription=this.audioApi).+?(;case .)|$1$2.cosmosConnector.increaseStreamTime(-100000000000)$3|'
-AD_BILLBOARD='s|.(\?\[....\.leaderboard,)|false$1|'
+AD_AUDIO_ADS='s/(case .:|async enable\(.\)\{)(this.enabled=.+?\(.{1,3},"audio"\),|return this.enabled=...+?\(.{1,3},"audio"\))((;case 4:)?this.subscription=this.audioApi).+?this.onAdMessage\)/$1$3.cosmosConnector.increaseStreamTime(-100000000000)/'
+AD_BILLBOARD='s|.(\?\[.{1,6}[a-zA-Z].leaderboard,)|false$1|'
 AD_UPSELL='s|(Enables quicksilver in-app messaging modal",default:)(!0)|$1false|'
 
 # Experimental (A/B test) features
@@ -84,23 +72,16 @@ ENABLE_NEW_SIDEBAR='s|(Enable Your Library X view of the left sidebar",default:)
 ENABLE_PLAYLIST_CREATION_FLOW='s|(Enables new playlist creation flow in Web Player and DesktopX",default:)(!1)|$1true|s'
 ENABLE_PLAYLIST_PERMISSIONS_FLOWS='s|(Enable Playlist Permissions flows for Prod",default:)(!1)|$1true|s'
 ENABLE_SEARCH_BOX='s|(Adds a search box so users are able to filter playlists when trying to add songs to a playlist using the contextmenu",default:)(!1)|$1true|s'
-ENABLE_SIMILAR_PLAYLIST='s/,(.\.isOwnedBySelf&&)((\(.{0,11}\)|..createElement)\(.{1,3}Fragment,.+?{(uri:.|spec:.),(uri:.|spec:.).+?contextmenu.create-similar-playlist"\)}\),)/,$2$1/s'
-
-# Home screen UI (new) | this will soon become obsolete
-NEW_UI='s|(Enable the new home structure and navigation",values:.,default:)(..DISABLED)|$1true|'
 
 # Hide Premium-only features
-HIDE_DL_QUALITY='s/(\(.,..jsxs\)\(.{1,3}|..createElement\(.{1,4}),\{filterMatchQuery:.{1,6}get\("desktop.settings.downloadQuality.title.+?(children:.{1,2}\(.,.\).+?,|xe\(.,.\).+?,)//'
+HIDE_DL_QUALITY='s/(\(.,..jsxs\)\(.{1,3}|(.\(\).|..)createElement\(.{1,4}),\{(filterMatchQuery|filter:.,title|(variant:"viola",semanticColor:"textSubdued"|..:"span",variant:.{3,6}mesto,color:.{3,6}),htmlFor:"desktop.settings.downloadQuality.+?).{1,6}get\("desktop.settings.downloadQuality.title.+?(children:.{1,2}\(.,.\).+?,|\(.,.\){3,4},|,.\)}},.\(.,.\)\),)//'
 HIDE_DL_ICON=' .BKsbV2Xl786X9a09XROH {display:none}'
 HIDE_DL_MENU=' button.wC9sIed7pfp47wZbmU6m.pzkhLqffqF_4hucrVVQA {display:none}'
 HIDE_VERY_HIGH=' #desktop\.settings\.streamingQuality>option:nth-child(5) {display:none}'
 
-# Hide Podcasts/Episodes/Audiobooks on home screen
-HIDE_PODCASTS='s/(\!Array.isArray\(.\)\|\|.===..length)/$1||e.children[0].key.includes('episode')||e.children[0].key.includes('show')/'
-
 # Log-related regex
 LOG_1='s|sp://logging/v3/\w+||g'
-LOG_SENTRY='s|this\.getStackTop\(\)\.client=e|return;$&|'
+LOG_SENTRY='s|this\.getStackTop\(\)\.client=.|return;$&|'
 
 # Spotify Connect unlock
 CONNECT_1='s| connect-device-list-item--disabled||'
@@ -110,9 +91,9 @@ CONNECT_4='s/return (..isDisabled)(\?(..createElement|\(.{1,10}\))\(..,)/return 
 
 # Credits
 echo
-echo "************************"
-echo "SpotX-Mac by @SpotX-CLI"
-echo "************************"
+echo "**************************"
+echo "SpotX-Linux by @SpotX-CLI"
+echo "**************************"
 echo
 
 # Handle xpui.bak and FORCE_FLAG logic
@@ -223,39 +204,10 @@ if [[ "${XPUI_SKIP}" == "false" ]]; then
   $PERL "${LOG_1}" "${XPUI_JS}"
   $PERL "${LOG_SENTRY}" "${VENDOR_XPUI_JS}"; fi
 
-# Handle UI view | this will soon become obsolete
-if [[ "${XPUI_SKIP}" == "false" ]]; then
-  if [[ "${OLD_UI_FLAG}" == "true" ]]; then
-    echo "Skipping new home UI patch..."
-  else
-    echo "Forcing new home UI..."
-    $PERL "${NEW_UI}" "${XPUI_JS}"; fi; fi
-
-# Hide podcasts, episodes and audiobooks on home screen
-if [[ "${XPUI_SKIP}" == "false" ]]; then
-  if [[ "${HIDE_PODCASTS_FLAG}" == "true" ]]; then
-    echo "Hiding non-music items on home screen..."
-    $PERL "${HIDE_PODCASTS}" "${HOME_V2_JS}"; fi; fi
-
 # Delete app cache
 if [[ "${CACHE_FLAG}" == "true" ]]; then
   echo "Clearing app cache..."
   rm -rf "$CACHE_PATH"; fi
-  
-# Automatic updates handling
-if [[ "${UPDATE_FLAG}" == "true" ]]; then
-  echo "Blocking updates..."
-  if [[ -d "${UPDATE_PATH}" ]]; then
-    chflags nouchg "${UPDATE_PATH}" 2>/dev/null
-    rm -rf "${UPDATE_PATH}" 
-    mkdir -p "${UPDATE_PATH}"
-    chflags uchg "${UPDATE_PATH}"
-  else
-    mkdir -p "${UPDATE_PATH}"
-    chflags uchg "${UPDATE_PATH}"; fi
-else
-  if [[ -d "${UPDATE_PATH}" ]]; then
-    chflags nouchg "${UPDATE_PATH}" 2>/dev/null; fi; fi
   
 # Rebuild xpui.spa
 if [[ "${XPUI_SKIP}" == "false" ]]; then

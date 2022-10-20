@@ -1,18 +1,15 @@
 #!/usr/bin/env bash
 
 # Inital paths and filenames
-APP_PATH="/Applications/Spotify.app"
-if [[ -d "${HOME}${APP_PATH}" ]]; then
-  INSTALL_PATH="${HOME}${APP_PATH}"
-elif [[ -d "${APP_PATH}" ]]; then
-  INSTALL_PATH="${APP_PATH}"
-else
-  echo -e "\nSpotify not found. Exiting...\n"
-  exit
-fi
-XPUI_PATH="${INSTALL_PATH}/Contents/Resources/Apps"
+INSTALL_PATH=$(readlink -e `type -p spotify`| rev | cut -d/ -f2- | rev)
+XPUI_PATH="${INSTALL_PATH}/Apps"
 XPUI_SPA="${XPUI_PATH}/xpui.spa"
 XPUI_BAK="${XPUI_PATH}/xpui.bak"
+
+# Detect client in PATH
+if [[ ! -d "${INSTALL_PATH}" ]]; then
+  echo -e "\nSpotify not found in PATH. Exiting...\n"
+  exit; fi
 
 # Check for backup file
 if [[ ! -f "${XPUI_BAK}" ]]; then
@@ -25,4 +22,4 @@ echo "Removing patch..."
 rm "${XPUI_SPA}"
 mv "${XPUI_BAK}" "${XPUI_SPA}"
 
-echo -e "Patch removed successfully!\n"
+echo -e "SpotX patch removed and backup restored!\n"
